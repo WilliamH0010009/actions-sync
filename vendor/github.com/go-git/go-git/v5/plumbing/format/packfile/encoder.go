@@ -2,13 +2,14 @@ package packfile
 
 import (
 	"compress/zlib"
-	"crypto/sha1"
 	"fmt"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/utils/binary"
+	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
 // Encoder gets the data from the storage and write it into the writer in PACK
@@ -27,7 +28,7 @@ type Encoder struct {
 // OFSDeltaObject. To use Reference deltas, set useRefDeltas to true.
 func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *Encoder {
 	h := plumbing.Hasher{
-		Hash: sha1.New(),
+		Hash: hash.New(hash.CryptoType),
 	}
 	mw := io.MultiWriter(w, h)
 	ow := newOffsetWriter(mw)
@@ -80,7 +81,7 @@ func (e *Encoder) head(numEntries int) error {
 	)
 }
 
-func (e *Encoder) entry(o *ObjectToPack) error {
+func (e *Encoder) entry(o *ObjectToPack) (err error) {
 	if o.WantWrite() {
 		// A cycle exists in this delta chain. This should only occur if a
 		// selected object representation disappeared during writing
@@ -119,17 +120,18 @@ func (e *Encoder) entry(o *ObjectToPack) error {
 	}
 
 	e.zw.Reset(e.w)
+
+	defer ioutil.CheckClose(e.zw, &err)
+
 	or, err := o.Object.Reader()
 	if err != nil {
 		return err
 	}
 
-	_, err = io.Copy(e.zw, or)
-	if err != nil {
-		return err
-	}
+	defer ioutil.CheckClose(or, &err)
 
-	return e.zw.Close()
+	_, err = io.Copy(e.zw, or)
+	return err
 }
 
 func (e *Encoder) writeBaseIfDelta(o *ObjectToPack) error {
