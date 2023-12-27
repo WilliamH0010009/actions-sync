@@ -23,7 +23,7 @@ package merkletrie
 
 // # Cases
 //
-// When comparing noders in both trees you will found yourself in
+// When comparing noders in both trees you will find yourself in
 // one of 169 possible cases, but if we ignore moves, we can
 // simplify a lot the search space into the following table:
 //
@@ -55,7 +55,7 @@ package merkletrie
 // Here is a full list of all the cases that are similar and how to
 // merge them together into more general cases.  Each general case
 // is labeled with an uppercase letter for further reference, and it
-// is followed by the pseudocode of the checks you have to perfrom
+// is followed by the pseudocode of the checks you have to perform
 // on both noders to see if you are in such a case, the actions to
 // perform (i.e. what changes to output) and how to advance the
 // iterators of each tree to continue the comparison process.
@@ -256,17 +256,21 @@ import (
 )
 
 var (
+	// ErrCanceled is returned whenever the operation is canceled.
 	ErrCanceled = errors.New("operation canceled")
 )
 
 // DiffTree calculates the list of changes between two merkletries.  It
 // uses the provided hashEqual callback to compare noders.
-func DiffTree(fromTree, toTree noder.Noder,
-	hashEqual noder.Equal) (Changes, error) {
+func DiffTree(
+	fromTree,
+	toTree noder.Noder,
+	hashEqual noder.Equal,
+) (Changes, error) {
 	return DiffTreeContext(context.Background(), fromTree, toTree, hashEqual)
 }
 
-// DiffTree calculates the list of changes between two merkletries.  It
+// DiffTreeContext calculates the list of changes between two merkletries. It
 // uses the provided hashEqual callback to compare noders.
 // Error will be returned if context expires
 // Provided context must be non nil
@@ -300,13 +304,38 @@ func DiffTreeContext(ctx context.Context, fromTree, toTree noder.Noder,
 				return nil, err
 			}
 		case onlyToRemains:
-			if err = ret.AddRecursiveInsert(to); err != nil {
-				return nil, err
+			if to.Skip() {
+				if err = ret.AddRecursiveDelete(to); err != nil {
+					return nil, err
+				}
+			} else {
+				if err = ret.AddRecursiveInsert(to); err != nil {
+					return nil, err
+				}
 			}
 			if err = ii.nextTo(); err != nil {
 				return nil, err
 			}
 		case bothHaveNodes:
+			if from.Skip() {
+				if err = ret.AddRecursiveDelete(from); err != nil {
+					return nil, err
+				}
+				if err := ii.nextBoth(); err != nil {
+					return nil, err
+				}
+				break
+			}
+			if to.Skip() {
+				if err = ret.AddRecursiveDelete(to); err != nil {
+					return nil, err
+				}
+				if err := ii.nextBoth(); err != nil {
+					return nil, err
+				}
+				break
+			}
+
 			if err = diffNodes(&ret, ii); err != nil {
 				return nil, err
 			}
